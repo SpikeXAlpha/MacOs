@@ -1,70 +1,43 @@
-name: MacRDP-Tailscale
+name: MacOS VNC via Tailscale
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: MacOS VNC via Tailscale
+  vnc:
     runs-on: macos-latest
-
+    timeout-minutes: 360
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+        # NOTE: apne purane Tailscale step ke inputs yahan rakhna agar alag the
 
-    # 1. Tailscale se connect karein (OAuth Client ke saath - authkey deprecated hai)
-    - name: Connect to Tailscale
-      uses: tailscale/github-action@v4
-      with:
-        oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-        oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-        tags: tag:ci
-        hostname: mac-runner
+      - name: Enable VNC (legacy password, RealVNC compatible)
+        env:
+          VNC_PASSWORD: ${{ secrets.VNC_PASSWORD }}   # EXACTLY 8 chars, legacy VNC limit
+          USER_PASSWORD: ${{ secrets.USER_PASSWORD }}
+        run: |
+          sudo dscl . -passwd /Users/runner "$USER_PASSWORD"
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -activate -configure -access -on \
+            -configure -allowAccessFor -allUsers \
+            -configure -restart -agent -privs -all \
+            -clientopts -setvnclegacy -vnclegacy yes \
+            -clientopts -setvncpw -vncpw "$VNC_PASSWORD"
 
-    # 2. Admin user banayein + VNC enable karein (FIXED)
-    - name: Create User and Enable VNC
-      run: |
-        # Spotlight indexing off (optional)
-        sudo mdutil -i off -a
+      - name: Try Screen Recording permission (best effort, usually blocked by SIP)
+        run: |
+          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
+            "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','/usr/libexec/screensharingd',1,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,$(date +%s));"  echo "TCC write blocked (SIP)"
 
-        # ---- SYSTEM ACCOUNT (username + password) ----
-        sudo dscl . -create /Users/runneradmin
-        sudo dscl . -create /Users/runneradmin UserShell /bin/bash
-        sudo dscl . -create /Users/runneradmin RealName Runner_Admin
-        sudo dscl . -create /Users/runneradmin UniqueID 1001
-        sudo dscl . -create /Users/runneradmin PrimaryGroupID 80
-        sudo dscl . -create /Users/runneradmin NFSHomeDirectory /Users/runneradmin
-        sudo dscl . -passwd /Users/runneradmin 'P@ssw0rd!'
-        sudo createhomedir -c -u runneradmin > /dev/null
-        sudo dscl . -append /Groups/admin GroupMembership runneradmin
+      - name: Show connection info
+        run: |
+          echo "Tailscale IP: $(tailscale ip -4)"
+          sudo lsof -iTCP:5900 -sTCP:LISTEN  echo "5900 not listening"
 
-        # ---- VNC ENABLE (FIXED VERSION) ----
-        # -access -on flag use karein, -allowAccessFor ki jagah
-        sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
-          -activate -configure -access -on -privs -all -restart -agent -menu
-
-        # VNC legacy + password set karein (native flag, perl trick nahi)
-        sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
-          -configure -clientopts -setvnclegacy -vnclegacy yes \
-          -clientopts -setvncpw -vncpw 'runnerrdp'
-
-    # 3. Tailscale IP aur credentials print karein
-    - name: Display Connection Info
-      run: |
-        echo "=========================================="
-        echo "VNC Connection Info:"
-        echo "=========================================="
-        echo "Tailscale IP:"
-        tailscale ip -4
-        echo "=========================================="
-        echo "Username: runneradmin"
-        echo "System Password: P@ssw0rd!"
-        echo "VNC-only Password: runnerrdp"
-        echo "=========================================="
-        echo "NOTE: Agar black screen aaye to Screen Recording permission issue hai."
-        echo "Yeh GitHub-hosted runner par bypass nahi ho sakta."
-        echo "=========================================="
-
-    # 4. Session alive rakhein (6 hours max)
-    - name: Keep Session Alive
-      run: sleep 21600
+      - name: Keep alive
+        run: sleep 21000
