@@ -6,7 +6,7 @@ on:
       os:
         description: Runner image
         type: choice
-        default: macos-15
+        default: macos-latest
         options:
           - macos-14
           - macos-15
