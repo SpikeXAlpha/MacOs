@@ -1,0 +1,70 @@
+name: MacRDP-Tailscale
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: MacOS VNC via Tailscale
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # 1. Tailscale se connect karein (Auth Key ke saath)
+    - name: Connect to Tailscale
+      uses: tailscale/github-action@v4
+      with:
+        authkey: ${{ secrets.TS_AUTHKEY }}
+        # Agar Tailnet Lock enable hai to neeche wala line uncomment karein:
+        # statedir: /tmp/tailscale-state
+
+    # 2. Admin user banayein + VNC enable karein
+    - name: Create User and Enable VNC
+      run: |
+        # Spotlight indexing off (optional)
+        sudo mdutil -i off -a
+
+        # ---- SYSTEM ACCOUNT (username + password) ----
+        # Username: runneradmin
+        # System Password: P@ssw0rd!
+        sudo dscl . -create /Users/runneradmin
+        sudo dscl . -create /Users/runneradmin UserShell /bin/bash
+        sudo dscl . -create /Users/runneradmin RealName Runner_Admin
+        sudo dscl . -create /Users/runneradmin UniqueID 1001
+        sudo dscl . -create /Users/runneradmin PrimaryGroupID 80
+        sudo dscl . -create /Users/runneradmin NFSHomeDirectory /Users/runneradmin
+        sudo dscl . -passwd /Users/runneradmin 'P@ssw0rd!'
+        sudo createhomedir -c -u runneradmin > /dev/null
+        sudo dscl . -append /Groups/admin GroupMembership runneradmin
+
+        # ---- VNC ENABLE ----
+        sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+          -activate -configure -allowAccessFor -allUsers -privs -all
+        sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+          -configure -clientopts -setvnclegacy -vnclegacy yes
+
+        # ---- VNC-ONLY PASSWORD (max 8 characters) ----
+        # Yahan "runnerrdp" VNC-only password hai
+        echo runnerrdp | perl -we 'BEGIN { @k = unpack "C*", pack "H*", "1734516E8BA8C5E2FF1C39567390ADCA"}; $_ = <>; chomp; s/^(.{8}).*/$1/; @p = unpack "C*", $_; foreach (@k) { printf "%02X", $_ ^ (shift @p || 0) }; print "\n"' | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
+
+        # VNC service restart
+        sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -restart -agent -console
+        sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate
+
+    # 3. Tailscale IP print karein
+    - name: Display Tailscale IP
+      run: |
+        echo "=========================================="
+        echo "VNC se connect karne ke liye Tailscale IP:"
+        tailscale ip -4
+        echo "=========================================="
+        echo "Username: runneradmin"
+        echo "System Password: P@ssw0rd!"
+        echo "VNC-only Password: runnerrdp"
+        echo "=========================================="
+
+    # 4. Session alive rakhein (aap connect karein tab tak)
+    - name: Keep Session Alive
+      uses: mxschmitt/action-tmate@v3
