@@ -6,7 +6,7 @@ on:
       os:
         description: Runner image
         type: choice
-        default: macos-latest
+        default: macos-14
         options:
           - macos-14
           - macos-15
@@ -85,6 +85,21 @@ jobs:
           echo "Password    : P@ssw0rd!"
           echo "=========================================="
           if sudo lsof -iTCP:5900 -sTCP:LISTEN; then echo "5900 listening"; else echo "5900 NOT listening"; fi
+
+      - name: Prepare Xcode (preinstalled on runner)
+        run: |
+          set +e
+          ls -d /Applications/Xcode*.app
+          XC=$(xcode-select -p | sed 's#/Contents/Developer##')
+          echo "Default Xcode: $XC"
+          sudo ln -sfn "$XC" /Applications/Xcode.app
+          sudo xcode-select -s "$XC/Contents/Developer"
+          sudo xcodebuild -license accept
+          sudo xcodebuild -runFirstLaunch
+          sudo DevToolsSecurity -enable
+          xcodebuild -version
+          xcrun simctl list runtimes
+          true
 
       - name: Wake display and debug
         run: |
