@@ -4,9 +4,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  vnc:
-    runs-on: macos-latest
+  build:
+    name: MacVNC
+    runs-on: macos-latest   # black screen aaye to macos-14 try karna
     timeout-minutes: 360
+
     steps:
       - name: Tailscale
         uses: tailscale/github-action@v4
@@ -14,29 +16,41 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
-        # NOTE: apne purane Tailscale step ke inputs yahan rakhna agar alag the
+          hostname: mac-runner
+        # NOTE: tumhare purane working Tailscale step ke inputs yahan rakh sakte ho
 
-      - name: Enable VNC (legacy password, RealVNC compatible)
-        env:
-          VNC_PASSWORD: ${{ secrets.VNC_PASSWORD }}   # EXACTLY 8 chars, legacy VNC limit
-          USER_PASSWORD: ${{ secrets.USER_PASSWORD }}
+      - name: Enable VNC (old working method, ngrok removed)
         run: |
-          sudo dscl . -passwd /Users/runner "$USER_PASSWORD"
-          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
-            -activate -configure -access -on \
-            -configure -allowAccessFor -allUsers \
-            -configure -restart -agent -privs -all \
-            -clientopts -setvnclegacy -vnclegacy yes \
-            -clientopts -setvncpw -vncpw "$VNC_PASSWORD"
+          sudo mdutil -i off -a
 
-      - name: Try Screen Recording permission (best effort, usually blocked by SIP)
-        run: |
-          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
-            "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','/usr/libexec/screensharingd',1,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,$(date +%s));"  echo "TCC write blocked (SIP)"
+          # new admin account
+          sudo dscl . -create /Users/runneradmin
+          sudo dscl . -create /Users/runneradmin UserShell /bin/bash
+          sudo dscl . -create /Users/runneradmin RealName Runner_Admin
+          sudo dscl . -create /Users/runneradmin UniqueID 1001
+          sudo dscl . -create /Users/runneradmin PrimaryGroupID 80
+          sudo dscl . -create /Users/runneradmin NFSHomeDirectory /Users/runneradmin
+          sudo dscl . -passwd /Users/runneradmin 'P@ssw0rd!'
+          sudo createhomedir -c -u runneradmin > /dev/null
+          sudo dscl . -append /Groups/admin GroupMembership runneradmin
 
-      - name: Show connection info
+          # enable VNC with legacy password
+          K=/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart
+          sudo $K -activate -configure -allowAccessFor -allUsers -privs -all
+          sudo $K -configure -clientopts -setvnclegacy -vnclegacy yes
+          echo runnerrdp | perl -we 'BEGIN { @k = unpack "C*", pack "H*", "1734516E8BA8C5E2FF1C39567390ADCA"}; $_ = <>; chomp; s/^(.{8}).*/$1/; @p = unpack "C*", $_; foreach (@k) { printf "%02X", $_ ^ (shift @p  0) }; print "\n"' | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
+          sudo $K -restart -agent -console
+          sudo $K -activate
+
+      - name: Connection details
         run: |
+          echo "=========================================="
           echo "Tailscale IP: $(tailscale ip -4)"
+          echo "VNC address : $(tailscale ip -4):5900"
+          echo "VNC password: runnerrdp"
+          echo "Username    : runneradmin"
+          echo "Password    : P@ssw0rd!"
+          echo "=========================================="
           sudo lsof -iTCP:5900 -sTCP:LISTEN  echo "5900 not listening"
 
       - name: Keep alive
