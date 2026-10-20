@@ -2,11 +2,20 @@ name: MacOS VNC via Tailscale
 
 on:
   workflow_dispatch:
+    inputs:
+      os:
+        description: Runner image
+        type: choice
+        default: macos-14
+        options:
+          - macos-14
+          - macos-15
+          - macos-latest
 
 jobs:
   build:
     name: MacVNC
-    runs-on: macos-latest   # black screen aaye to macos-14 try karna
+    runs-on: ${{ inputs.os }}
     timeout-minutes: 360
 
     steps:
@@ -37,7 +46,7 @@ jobs:
           # enable VNC with legacy password
           K=/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart
           sudo $K -activate -configure -allowAccessFor -allUsers -privs -all
-          sudo $K -configure -clientopts -setvnclegacy -vnclegacy yes
+          sudo $K -configure -clientopts -setvnclegacy -vnclegacy yes -clientopts -setvncpw -vncpw runnerrd
           python3 -c "import sys; k=bytes.fromhex('1734516E8BA8C5E2FF1C39567390ADCA'); p=sys.argv[1][:8].encode(); print(''.join('%02X'%(k[i]^(p[i] if i<len(p) else 0)) for i in range(16)))" runnerrdp | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
           sudo $K -restart -agent -console
           sudo $K -activate
@@ -53,5 +62,15 @@ jobs:
           echo "=========================================="
           if sudo lsof -iTCP:5900 -sTCP:LISTEN; then echo "5900 listening"; else echo "5900 NOT listening"; fi
 
-      - name: Keep alive
-        run: sleep 21000
+      - name: Wake display and debug
+        run: |
+          set +e
+          sw_vers
+          echo "console user: $(stat -f%Su /dev/console)"
+          sudo pmset -a displaysleep 0 sleep 0
+          caffeinate -u -t 5
+          sudo launchctl list | grep -i screensharing
+          true
+
+      - name: Keep alive (display awake)
+        run: caffeinate -dimsu sleep 21000
