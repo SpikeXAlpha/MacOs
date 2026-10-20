@@ -38,7 +38,7 @@ jobs:
           K=/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart
           sudo $K -activate -configure -allowAccessFor -allUsers -privs -all
           sudo $K -configure -clientopts -setvnclegacy -vnclegacy yes
-          echo runnerrdp | perl -we 'BEGIN { @k = unpack "C*", pack "H*", "1734516E8BA8C5E2FF1C39567390ADCA"}; $_ = <>; chomp; s/^(.{8}).*/$1/; @p = unpack "C*", $_; foreach (@k) { printf "%02X", $_ ^ (shift @p  0) }; print "\n"' | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
+          python3 -c "import sys; k=bytes.fromhex('1734516E8BA8C5E2FF1C39567390ADCA'); p=sys.argv[1][:8].encode(); print(''.join('%02X'%(k[i]^(p[i] if i<len(p) else 0)) for i in range(16)))" runnerrdp | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
           sudo $K -restart -agent -console
           sudo $K -activate
 
@@ -51,7 +51,7 @@ jobs:
           echo "Username    : runneradmin"
           echo "Password    : P@ssw0rd!"
           echo "=========================================="
-          sudo lsof -iTCP:5900 -sTCP:LISTEN  echo "5900 not listening"
+          if sudo lsof -iTCP:5900 -sTCP:LISTEN; then echo "5900 listening"; else echo "5900 NOT listening"; fi
 
       - name: Keep alive
         run: sleep 21000
