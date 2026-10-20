@@ -51,6 +51,30 @@ jobs:
           sudo $K -restart -agent -console
           sudo $K -activate
 
+      - name: Grant Screen Recording permission (TCC, best effort)
+        run: |
+          set +e
+          NOW=$(date +%s)
+          SQL=""
+          for SVC in kTCCServiceScreenCapture kTCCServicePostEvent kTCCServiceListenEvent kTCCServiceAccessibility; do
+            for CL in com.apple.screensharing.agent com.apple.RemoteDesktop.agent com.apple.screensharing.MessagesAgent /usr/libexec/screensharingd /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/MacOS/ARDAgent /bin/bash; do
+              TYPE=0
+              case "$CL" in /*) TYPE=1;; esac
+              SQL="$SQL INSERT OR REPLACE INTO access (service,client,client_type,auth_value,auth_reason,auth_version,indirect_object_identifier,flags,last_modified) VALUES ('$SVC','$CL',$TYPE,2,4,1,'UNUSED',0,$NOW);"
+            done
+          done
+          for DB in "/Library/Application Support/com.apple.TCC/TCC.db" "$HOME/Library/Application Support/com.apple.TCC/TCC.db"; do
+            echo "== $DB"
+            sudo sqlite3 "$DB" "$SQL"
+            echo "write exit code: $?"
+            sudo sqlite3 "$DB" "select service,client,auth_value from access where service='kTCCServiceScreenCapture';"
+          done
+          sudo killall tccd
+          sudo killall screensharingd
+          K=/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart
+          sudo $K -restart -agent -console
+          true
+
       - name: Connection details
         run: |
           echo "=========================================="
